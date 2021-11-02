@@ -1,76 +1,80 @@
-// DOM elements
-const magnetoDiv = document.getElementById('magnetoDiv')
-const acceleroDiv = document.getElementById('acceleroDiv')
-const sampleRateSelect = document.getElementById('sampleRateSelect')
-const sampleRateSpan = document.getElementById('sampleRateSpan')
-const acceleroSampleRateSpan = document.getElementById('acceleroSampleRateSpan')
+// Select and render boxes
+const magSampleRateSelect = document.getElementById('magSampleRateSelect')
+const magSampleRateSpan = document.getElementById('magSampleRateSpan')
+const accelSampleRateSelect = document.getElementById('accelSampleRateSelect')
+const accelSampleRateSpan = document.getElementById('accelSampleRateSpan')
+const battSampleRateSelect = document.getElementById('battSampleRateSelect')
+const battSampleRateSpan = document.getElementById('battSampleRateSpan')
+
+// Graph divs
+const magDiv = document.getElementById('magDiv')
+const accelDiv = document.getElementById('accelDiv')
+const gyroDiv = document.getElementById('gyroDiv')
+const battDiv = document.getElementById('battDiv')
+
+// Extra info
+const battLevelSpan = document.getElementById('battLevelSpan')
 const frameRateSpan = document.getElementById('frameRateSpan')
 
-const battLevelSpan = document.getElementById('battLevelSpan')
-const battGraphDiv = document.getElementById('battGraphDiv')
-
 /// BLE things, mainly for debug
-var device, server, service, magnetoCharacteristic, accelCharacteristic, battService, battCharacteristic
-/// to display the actual sample rate
-var sampleCnt = 0, acceleroSampleCnt = 0, frameCnt = 0
-/// x, y, z coordinates sent to Plotly at
-var xq = [], yq = [], zq = []
-var axq = [], ayq = [], azq = []
+var device, server, service, magCharacteristic, accelCharacteristic, battCharacteristic
 
-/// push the data to the temp arrays
-function gotMagnetoData(evt) {
+/// to display the actual sample rate
+var magSampleCnt = 0, accelSampleCnt = 0, battSampleCnt = 0, frameCnt = 0
+
+/// x, y, z coordinates sent to Plotly for mag, accel, gyro
+var mxq = [], myq = [], mzq = []
+var axq = [], ayq = [], azq = []
+var gxq = [], gyq = [], gzq = []
+var bq = []
+
+function gotMagData(evt) {
     var raw = evt.target.value
-    // console.log('evt:', evt, raw)
-    var magData = new Int32Array(raw.buffer)
-    sampleCnt++
-    xq.push(magData[0])
-    yq.push(magData[1])
-    zq.push(magData[2])
+    var magData = new Int16Array(raw.buffer)
+    magSampleCnt++
+    mxq.push(magData[0])
+    myq.push(magData[1])
+    mzq.push(magData[2])
 }
 
-function gotAcceleroData(evt) {
+function gotAccelData(evt) {
     var raw = evt.target.value
-    // console.log('gotAcceleroData:', evt, raw)
-    var accelData = new Float32Array(raw.buffer)
-    acceleroSampleCnt++
+    var accelData = new Int16Array(raw.buffer)
+    accelSampleCnt++
     axq.push(accelData[0])
     ayq.push(accelData[1])
     azq.push(accelData[2])
+    gxq.push(accelData[3])
+    gyq.push(accelData[4])
+    gzq.push(accelData[5])
 }
 
-function showBattLevel(battLevel) {
-    battLevelSpan.innerText = battLevel + "%"
-    Plotly.extendTraces(battGraphDiv, {
-        y: [[battLevel]],
-        x: [[new Date()]]
-    }, [0])
-}
-
-function battChanged(evt) {
+function gotBattData(evt) {
     var raw = evt.target.value
-    var battLevel = new Uint8Array(raw.buffer)[0]
-    showBattLevel(battLevel)
+    var batData = new Uint8Array(raw.buffer)
+    battSampleCnt++
+    bq.push(batData[0])
 }
 
 /// the function executing at requestAnimationFrame.
 /// otherwise 80Hz update rate would lock up my browser (I guess depends on screen refresh rate)
 function step() {
     frameCnt++
-    if (xq.length) {
+    if (mxq.length) {
         Plotly.extendTraces(
-            magnetoDiv,
+            magDiv,
             {
-                y: [xq, yq, zq],
+                y: [mxq, myq, mzq],
             },
             [0, 1, 2]
         );
-        xq.length = 0;
-        yq.length = 0;
-        zq.length = 0;
+        mxq.length = 0;
+        myq.length = 0;
+        mzq.length = 0;
     }
     if (axq.length) {
         Plotly.extendTraces(
-            acceleroDiv,
+            accelDiv,
             {
                 y: [axq, ayq, azq],
             },
@@ -80,11 +84,41 @@ function step() {
         ayq.length = 0;
         azq.length = 0;
     }
+    if (gxq.length) {
+        Plotly.extendTraces(
+            gyroDiv,
+            {
+                y: [gxq, gyq, gzq],
+            },
+            [0, 1, 2]
+        );
+        gxq.length = 0;
+        gyq.length = 0;
+        gzq.length = 0;
+    }
+    if (bq.length) {
+        Plotly.extendTraces(
+            battDiv,
+            {
+                y: [bq],
+            },
+            [0, ]
+        );
+        bq.length = 0;
+    }
     window.requestAnimationFrame(step)
 }
 
-function setSampleRate(rateInHz) {
-    magnetoCharacteristic && magnetoCharacteristic.writeValue && magnetoCharacteristic.writeValue(new Int8Array([rateInHz]))
+function setMagSampleRate(rateInHz) {
+    magCharacteristic && magCharacteristic.writeValue && magCharacteristic.writeValue(new Int8Array([rateInHz]))
+}
+
+function setAccelSampleRate(rateInHz) {
+    accelCharacteristic && accelCharacteristic.writeValue && accelCharacteristic.writeValue(new Int8Array([rateInHz]))
+}
+
+function setBattSampleRate(rateInHz) {
+    battCharacteristic && battCharacteristic.writeValue && battCharacteristic.writeValue(new Int8Array([rateInHz]))
 }
 
 function disconnect() {
@@ -92,9 +126,8 @@ function disconnect() {
     device = undefined
     server = undefined
     service = undefined
-    magnetoCharacteristic = undefined
+    magCharacteristic = undefined
     accelCharacteristic = undefined
-    battService = undefined
     battCharacteristic = undefined
 }
 
@@ -102,7 +135,7 @@ function disconnect() {
 function doIt() {
     disconnect();
 
-    navigator.bluetooth.requestDevice({ optionalServices: ['f8b23a4d-89ad-4220-8c9f-d81756009f0c', 0x2A19], acceptAllDevices: true })
+    navigator.bluetooth.requestDevice({ optionalServices: ['f8b23a4d-89ad-4220-8c9f-d81756009f0c'], acceptAllDevices: true })
         .then(d => {
             device = d;
             console.debug('device:', device)
@@ -112,30 +145,7 @@ function doIt() {
             server = s
             console.debug('server:', server)
 
-            // get battery service & characteristic:
-            s.getPrimaryService(0x2A19)
-                .then(battSrv => {
-                    console.debug('got battService:', battSrv)
-                    battService = battSrv
-                    return battSrv.getCharacteristic(0x2A19)
-                })
-                .then(battCh => {
-                    console.debug('got battCharacteristic:', battCh)
-                    battCharacteristic = battCh
-                    // add event listener to battery characteristic
-                    battCh.addEventListener('characteristicvaluechanged', battChanged)
-                    battCh.startNotifications()
-
-                    // get the current battery level
-                    battCh.readValue()
-                        .then(w => {
-                            var battLevel = new Uint8Array(w.buffer)[0];
-                            showBattLevel(battLevel)
-                        })
-                })
-
-
-            // get magnetometer service & characteristic:
+            // Get puck characteristics
             s.getPrimaryService('f8b23a4d-89ad-4220-8c9f-d81756009f0c')
                 .then(srv => {
                     service = srv
@@ -147,17 +157,25 @@ function doIt() {
                     for (let ix = 0; ix < chs.length; ix++) {
                         const ch = chs[ix];
                         if (ch.uuid == 'f8b23a4d-89ad-4220-8c9f-d81756009f0c') {
-                            // Puck or Bangle magnetometer
-                            magnetoCharacteristic = ch
-                            ch.addEventListener('characteristicvaluechanged', gotMagnetoData)
+                            // Magnetometer
+                            magCharacteristic = ch
+                            ch.addEventListener('characteristicvaluechanged', gotMagData)
                             ch.startNotifications()
-                            setSampleRate(sampleRateSelect.value)
+                            setMagSampleRate(magSampleRateSelect.value)
                         }
                         if (ch.uuid == 'f8b23a4d-89ad-4220-8c9f-d81756009f0d') {
-                            // Bangle's accelerometer
+                            // Accelerometer
                             accelCharacteristic = ch
-                            ch.addEventListener('characteristicvaluechanged', gotAcceleroData)
+                            ch.addEventListener('characteristicvaluechanged', gotAccelData)
                             ch.startNotifications()
+                            setAccelSampleRate(accelSampleRateSelect.value)
+                        }
+                        if (ch.uuid == 'f8b23a4d-89ad-4220-8c9f-d81756009f0e') {
+                            // battery
+                            battCharacteristic = ch
+                            ch.addEventListener('characteristicvaluechanged', gotBattData)
+                            ch.startNotifications()
+                            setBattSampleRate(battSampleRateSelect.value)
                         }
                     }
                 })
@@ -166,7 +184,8 @@ function doIt() {
 
 /// Create the initial graph & clear it
 function clearIt() {
-    Plotly.newPlot(magnetoDiv, [{
+
+    Plotly.newPlot(magDiv, [{
         y: [],
         type: 'scattergl',
         mode: 'lines',
@@ -184,9 +203,9 @@ function clearIt() {
         mode: 'lines',
         line: { color: '#00f' },
         name: 'z'
-    }], { title: 'Magnetometer/compass' });
+    }], { title: 'Magnetometer' });
 
-    Plotly.newPlot(acceleroDiv, [{
+    Plotly.newPlot(accelDiv, [{
         y: [],
         type: 'scattergl',
         mode: 'lines',
@@ -205,18 +224,46 @@ function clearIt() {
         line: { color: '#00f' },
         name: 'z'
     }], { title: 'Accelerometer' });
+
+    Plotly.newPlot(gyroDiv, [{
+        y: [],
+        type: 'scattergl',
+        mode: 'lines',
+        line: { color: '#f00' },
+        name: 'x'
+    }, {
+        y: [],
+        type: 'scattergl',
+        mode: 'lines',
+        line: { color: '#0f0' },
+        name: 'y'
+    }, {
+        y: [],
+        type: 'scattergl',
+        mode: 'lines',
+        line: { color: '#00f' },
+        name: 'z'
+    }], { title: 'Gyroscope' });
+
+    Plotly.newPlot(battDiv, [{
+        y: [],
+        type: 'scattergl',
+        mode: 'lines',
+        line: { color: '#000' },
+    }], { title: 'Battery level' });
 }
 
 // the actual initialization
-sampleRateSelect.onchange = evt => { setSampleRate(evt.target.value) }
+magSampleRateSelect.onchange = evt => {setMagSampleRate(evt.target.value) }
+accelSampleRateSelect.onchange = evt => {setAccelSampleRate(evt.target.value) }
+battSampleRateSelect.onchange = evt => {setBattSampleRate(evt.target.value) }
 setInterval(() => {
-    sampleRateSpan.innerText = sampleCnt; sampleCnt = 0
-    acceleroSampleRateSpan.innerText = acceleroSampleCnt; acceleroSampleCnt = 0
+    magSampleRateSpan.innerText = magSampleCnt; magSampleCnt = 0
+    accelSampleRateSpan.innerText = accelSampleCnt; accelSampleCnt = 0
+    battSampleRateSpan.innerText = battSampleCnt; battSampleCnt = 0
     frameRateSpan.innerText = frameCnt; frameCnt = 0
 }, 1000)
 window.requestAnimationFrame(step)
 
 // first: initialize the main plot
 clearIt()
-// second plot for battery level
-Plotly.plot(battGraphDiv, [{ x: [], y: [], mode: "lines+markers" }], { title: 'Battery level [%]' })

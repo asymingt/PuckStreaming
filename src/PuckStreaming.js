@@ -1,86 +1,156 @@
 // upload this to the Puck
 
-var magRate = 5, batteryInterval;
+var magRate = 5;
+var accelRate = 26;
+var battRate = 1;
+var batteryInterval;
 
+// Called whenever a new magnetometer reading arrives
 function onMag(d) {
-  // print('mag:', d)
+  // Each below map to a int16
+  // 8:  Puck.light() 0 : 1
+  // 8:  Puck.getBatteryPercentage() : 0 - 100
+  // 16: E.getTemperature() : degrees celcius
+  // 16: analogRead(A0) : between 0 and 1
   NRF.updateServices({
     'f8b23a4d-89ad-4220-8c9f-d81756009f0c': {
       'f8b23a4d-89ad-4220-8c9f-d81756009f0c': {
-        value: new Int32Array([d.x, d.y, d.z]).buffer,
-        notify: true
+        notify: true,
+        readable: true,
+        value: new Int16Array(
+          [d.x, d.y, d.z]).buffer
       }
     }
   })
 }
 
-function updateBattery() {
+// Called whenever a new accelerometer reading arrives
+function onAccel(d) {
   NRF.updateServices({
-    0x2A19: {
-      0x2A19: {
+    'f8b23a4d-89ad-4220-8c9f-d81756009f0c': {
+      'f8b23a4d-89ad-4220-8c9f-d81756009f0d': {
         notify: true,
         readable: true,
-        value: [E.getBattery()]
+        value: new Int16Array(
+          [d.acc.x, d.acc.y, d.acc.z, d.gyro.x, d.gyro.y, d.gyro.z]).buffer
       }
     }
   })
+}
+
+// Called whenever a new battery reading arrives. 
+function onBattery() {
+  NRF.updateServices({
+    'f8b23a4d-89ad-4220-8c9f-d81756009f0c': {
+      'f8b23a4d-89ad-4220-8c9f-d81756009f0e': {
+        notify: true,
+        readable: true,
+        value: new Uint8Array(
+          [E.getBattery()]).buffer
+      }
+    }
+  })
+}
+
+function accelInit(accelRate) {
+  if (accelRate === 0) {
+    Puck.accelOff();
+  } else {
+    Puck.accelOn(accelRate);
+    Puck.accelWr(0x10, Puck.accelRd(0x10) | 0b00001100); // scale to 2000dps
+    Puck.accelWr(0x11, Puck.accelRd(0x11) | 0b00001000); // scale to +- 4g
+  }
+}
+
+function magInit(magRate) {
+  if (magRate === 0) {
+    Puck.magOff();
+  } else {
+    Puck.magOn(magRate);
+  }
+}
+
+function battInit(battRate) {
+  if (batteryInterval) {
+    clearInterval(batteryInterval);
+    batteryInterval = undefined;
+  }
+  if (battRate != 0) {
+    batteryInterval = setInterval(onBattery, 1000 / battRate);
+  }
 }
 
 function onInit() {
+
   // on connect / disconnect blink the green / red LED turn on / off the magnetometer
-  NRF.on('connect', function() {Puck.magOn(magRate); digitalPulse(LED2, 1, 100)})
-  NRF.on('disconnect', function() {Puck.magOff(); digitalPulse(LED1, 1, 100)})
+  NRF.on('connect', function() {
+    magInit(magRate);
+    accelInit(accelRate);
+    battInit(battRate);
+    digitalPulse(LED2, 1, 100);
+  })
+  NRF.on('disconnect', function() {
+    battInit(0);
+    accelInit(0);
+    magInit(0);
+    digitalPulse(LED1, 1, 100);
+  })
 
   // declare the services
   NRF.setServices({
-    // Battery level service
-    0x2A19: {
-      0x2A19: {
-        notify: true,
-        readable: true,
-        value: [E.getBattery()]
-      }
-    },
-    // Magnetometer service
+    // Puck service
     'f8b23a4d-89ad-4220-8c9f-d81756009f0c': {
+      // Magnetometer service
       'f8b23a4d-89ad-4220-8c9f-d81756009f0c': {
         description: 'Puck magnetometer',
         notify: true,
         readable: true,
-        value: new Int32Array([0, 0, 0]).buffer,
+        value: new Int16Array([0, 0, 0]).buffer,
         writable: true,
         onWrite: function(evt) {
-          // pulse the blue LED if we got a new sample rate
-          digitalPulse(LED3, 1, 100)
-          var d = evt.data && evt.data[0]
-          if (d === 0) {Puck.magOff()}
-          // lazy mode on: only integer sample rates work
-
-          // Valid sample rates:
-          // 80 Hz - 900uA
-          // 40 Hz - 550uA
-          // 20 Hz - 275uA
-          // 10 Hz - 137uA
-          // 5 Hz - 69uA
-          // 2.5 Hz - 34uA
-          // 1.25 Hz - 17uA
-          // 0.63 Hz - 8uA
-          // 0.31 Hz - 8uA
-          // 0.16 Hz - 8uA
-          // 0.08 Hz - 8uA
-          if ([80, 40, 20, 10, 5].indexOf(d) >= 0) {Puck.magOn(d); magRate = d}
+          digitalPulse(LED3, 1, 100);
+          var magRate = evt.data && evt.data[0];
+          magInit(magRate);
+        }
+      },
+      // Accelerometer
+      'f8b23a4d-89ad-4220-8c9f-d81756009f0d': {
+        description: 'Puck accelerometer',
+        notify: true,
+        readable: true,
+        value: new Int16Array([0, 0, 0, 0, 0, 0]).buffer,
+        writable: true,
+        onWrite: function(evt) {
+          digitalPulse(LED3, 1, 100);
+          var accelRate = evt.data && evt.data[0];
+          accelInit(accelRate);
+        }
+      },
+      // Battery
+      'f8b23a4d-89ad-4220-8c9f-d81756009f0e': {
+        description: 'Puck battery',
+        notify: true,
+        readable: true,
+        value: new Uint8Array([0]).buffer,
+        writable: true,
+        onWrite: function(evt) {
+          digitalPulse(LED3, 1, 100);
+          var battRate = evt.data && evt.data[0];
+          battInit(battRate);
         }
       }
     }
   })
 
-  /// don't turn on the magnetometer yet
-  //Puck.magOn(5)
+  // Toggle LED when button is pressed
+  setWatch(function() {
+    LED1.toggle();
+  }, BTN, {repeat: true})
 
-  // The button toggles the red LED.
-  // Just an easy way to "change" the battery level, since a LED continuously turned on causes a measurable voltage drop on a CR2032.
-  setWatch(function() {LED1.toggle()}, BTN, {repeat: true})
-  batteryInterval = setInterval(updateBattery, 10000)
+  // Set callbacks for magnetometer and accelerometer
+  Puck.on('mag', onMag);
+  Puck.on('accel', onAccel);
 
-  Puck.on('mag', onMag)
+  // Make it nice and easy to go to the right website.
+  NRF.nfcURL("https://rowlikeapro.com");
 }

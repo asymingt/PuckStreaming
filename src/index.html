@@ -14,8 +14,8 @@
     <button onclick="clearIt()">Clear the graphs!</button>
     <button onclick="disconnect()">Disconnect!</button>
 
-    Sample rate:
-    <select id="sampleRateSelect">
+    Mag sample rate:
+    <select id="magSampleRateSelect">
         <option value="80">80 Hz</option>
         <option value="40">40 Hz</option>
         <option value="20">20 Hz</option>
@@ -24,17 +24,37 @@
         <option value="0">0 (OFF)</option>
     </select>
 
+    Accel sample rate:
+    <select id="accelSampleRateSelect">
+        <option value="26" selected>26 Hz</option>
+        <option value="52">52 Hz</option>
+        <option value="104">104 Hz</option>
+        <option value="208">208 Hz</option>
+        <option value="0">0 (OFF)</option>
+    </select>
+
+    Battery sample rate:
+    <select id="battSampleRateSelect">
+        <option value="1" selected>1 Hz</option>
+        <option value="2">2 Hz</option>
+        <option value="4">4 Hz</option>
+        <option value="8">8 Hz</option>
+        <option value="0">0 (OFF)</option>
+    </select>
+
     <br />
-    Magnetometer sample rate: <span id="sampleRateSpan">?</span>
-    Accelerometer sample rate: <span id="acceleroSampleRateSpan">?</span>
+    Magnetometer sample rate: <span id="magSampleRateSpan">?</span>
+    Accelerometer sample rate: <span id="accelSampleRateSpan">?</span>
+    Battery sample rate: <span id="battSampleRateSpan">?</span>
     Battery level: <span id="battLevelSpan">?</span>
     Browser frame rate: <span id="frameRateSpan">?</span>
 
     <hr />
 
-    <div id="magnetoDiv" style="width: 100%;"></div>
-    <div id="acceleroDiv" style="width: 100%;"></div>
-    <div id="battGraphDiv" style="width: 100%;"></div>
+    <div id="magDiv" style="height: 300px; width: 100%;"></div>
+    <div id="accelDiv" style="height: 300px; width: 100%;"></div>
+    <div id="gyroDiv" style="height: 300px; width: 100%;"></div>
+    <div id="battDiv" style="height: 300px; width: 100%;"></div>
 
     <script src="receive.js"></script>
 </body>
