@@ -1,59 +1,116 @@
 // Select and render boxes
 const magSampleRateSelect = document.getElementById('magSampleRateSelect')
 const magSampleRateSpan = document.getElementById('magSampleRateSpan')
-const accelSampleRateSelect = document.getElementById('accelSampleRateSelect')
-const accelSampleRateSpan = document.getElementById('accelSampleRateSpan')
-const battSampleRateSelect = document.getElementById('battSampleRateSelect')
-const battSampleRateSpan = document.getElementById('battSampleRateSpan')
+const imuSampleRateSelect = document.getElementById('imuSampleRateSelect')
+const imuSampleRateSpan = document.getElementById('imuSampleRateSpan')
+const metSampleRateSelect = document.getElementById('metSampleRateSelect')
+const metSampleRateSpan = document.getElementById('metSampleRateSpan')
 
 // Graph divs
 const magDiv = document.getElementById('magDiv')
-const accelDiv = document.getElementById('accelDiv')
-const gyroDiv = document.getElementById('gyroDiv')
-const battDiv = document.getElementById('battDiv')
+const accDiv = document.getElementById('accDiv')
+const gyrDiv = document.getElementById('gyrDiv')
+const batDiv = document.getElementById('batDiv')
+const adcDiv = document.getElementById('adcDiv')
 
 // Extra info
-const battLevelSpan = document.getElementById('battLevelSpan')
+const idSpan = document.getElementById('idSpan')
+const batLevelSpan = document.getElementById('batLevelSpan')
 const frameRateSpan = document.getElementById('frameRateSpan')
 
 /// BLE things, mainly for debug
-var device, server, service, magCharacteristic, accelCharacteristic, battCharacteristic
+var device, server, service, fastCharacteristic, slowCharacteristic;
 
 /// to display the actual sample rate
-var magSampleCnt = 0, accelSampleCnt = 0, battSampleCnt = 0, frameCnt = 0
+var magSampleRate, imuSampleRate, metSampleRate;
+var imuSampleCnt = 0, magSampleCnt = 0, metSampleCnt = 0, frameCnt = 0
 
 /// x, y, z coordinates sent to Plotly for mag, accel, gyro
-var mxq = [], myq = [], mzq = []
-var axq = [], ayq = [], azq = []
-var gxq = [], gyq = [], gzq = []
-var bq = []
+var mxq = [], myq = [], mzq = [];
+var axq = [], ayq = [], azq = [];
+var gxq = [], gyq = [], gzq = [];
+var bq = [], aq = [];
 
-function gotMagData(evt) {
-    var raw = evt.target.value
-    var magData = new Int16Array(raw.buffer)
-    magSampleCnt++
-    mxq.push(magData[0])
-    myq.push(magData[1])
-    mzq.push(magData[2])
+// Get the ID -> color mapping
+function getStringId(newId) {
+    var id = "unknown";
+    switch (newId) {
+    case 0b000:
+        id = "black";
+        break;
+    case 0b001:
+        id = "red";
+        break;
+    case 0b010:
+        id = "green";
+        break;
+    case 0b011:
+        id = "yellow";
+        break;
+    case 0b100:
+        id = "blue";
+        break;
+    case 0b101:
+        id = "purple";
+        break;
+    case 0b110:
+        id = "cyan";
+        break;
+    case 0b111:
+        id = "white";
+        break;
+    }
+    return id;
 }
 
-function gotAccelData(evt) {
-    var raw = evt.target.value
-    var accelData = new Int16Array(raw.buffer)
-    accelSampleCnt++
-    axq.push(accelData[0])
-    ayq.push(accelData[1])
-    azq.push(accelData[2])
-    gxq.push(accelData[3])
-    gyq.push(accelData[4])
-    gzq.push(accelData[5])
+function showBatLevel(battLevel) {
+    batLevelSpan.innerText = battLevel + "%"
 }
 
-function gotBattData(evt) {
+function showId(id) {
+    idSpan.innerText = id
+}
+
+// Unpack fast rate data
+function gotFastData(evt) {
+    // Unpack data
+    var raw = evt.target.value;
+    var fastData = new Int16Array(raw.buffer);
+    // decode metadata
+    var meta = fastData[0];
+    var mag = ((meta >> 15) & 0x1);
+    var id = ((meta >> 12) & 0x7);
+    var adc = (meta & 0xFFF);
+    // save id
+    showId(getStringId(id));
+    // save ADC
+    aq.push(adc);
+    // Save IMU
+    imuSampleCnt++;
+    axq.push(fastData[1]);
+    ayq.push(fastData[2]);
+    azq.push(fastData[3]);
+    gxq.push(fastData[4]);
+    gyq.push(fastData[5]);
+    gzq.push(fastData[6]);
+    // Save mag
+    if (mag == 1) {
+        magSampleCnt++;
+        mxq.push(fastData[7]);
+        myq.push(fastData[8]);
+        mzq.push(fastData[9]);
+    }
+}
+
+// Unpack slow rate data
+function gotSlowData(evt) {
     var raw = evt.target.value
-    var batData = new Uint8Array(raw.buffer)
-    battSampleCnt++
-    bq.push(batData[0])
+    var slowData = new Int16Array(raw.buffer)
+    metSampleCnt++;
+    // Save battery
+    var batLevl = slowData[1];
+    bq.push(batLevl);
+    showBatLevel(batLevl);
 }
 
 /// the function executing at requestAnimationFrame.
@@ -74,7 +131,7 @@ function step() {
     }
     if (axq.length) {
         Plotly.extendTraces(
-            accelDiv,
+            accDiv,
             {
                 y: [axq, ayq, azq],
             },
@@ -86,7 +143,7 @@ function step() {
     }
     if (gxq.length) {
         Plotly.extendTraces(
-            gyroDiv,
+            gyrDiv,
             {
                 y: [gxq, gyq, gzq],
             },
@@ -96,9 +153,19 @@ function step() {
         gyq.length = 0;
         gzq.length = 0;
     }
+    if (aq.length) {
+        Plotly.extendTraces(
+            adcDiv,
+            {
+                y: [aq],
+            },
+            [0, ]
+        );
+        aq.length = 0;
+    }
     if (bq.length) {
         Plotly.extendTraces(
-            battDiv,
+            batDiv,
             {
                 y: [bq],
             },
@@ -106,19 +173,17 @@ function step() {
         );
         bq.length = 0;
     }
-    window.requestAnimationFrame(step)
+    window.requestAnimationFrame(step);
 }
 
-function setMagSampleRate(rateInHz) {
-    magCharacteristic && magCharacteristic.writeValue && magCharacteristic.writeValue(new Int8Array([rateInHz]))
-}
-
-function setAccelSampleRate(rateInHz) {
-    accelCharacteristic && accelCharacteristic.writeValue && accelCharacteristic.writeValue(new Int8Array([rateInHz]))
-}
-
-function setBattSampleRate(rateInHz) {
-    battCharacteristic && battCharacteristic.writeValue && battCharacteristic.writeValue(new Int8Array([rateInHz]))
+function setSampleRates(imuSampleRateIn, magSampleRateIn, metSampleRateIn) {
+    // Don't update with unefined values.
+    if ((typeof imuSampleRateIn === 'undefined') ||
+        (typeof magSampleRateIn === 'undefined') ||
+        (typeof metSampleRateIn === 'undefined')) return;
+    // If we get here, then all rates are valid.
+    fastCharacteristic && fastCharacteristic.writeValue && fastCharacteristic.writeValue(
+        new Uint8Array([imuSampleRateIn, magSampleRateIn, metSampleRateIn]))
 }
 
 function disconnect() {
@@ -126,15 +191,13 @@ function disconnect() {
     device = undefined
     server = undefined
     service = undefined
-    magCharacteristic = undefined
-    accelCharacteristic = undefined
-    battCharacteristic = undefined
+    fastCharacteristic = undefined
+    slowCharacteristic = undefined
 }
 
 /// Connect to the Puck
 function doIt() {
     disconnect();
-
     navigator.bluetooth.requestDevice({ optionalServices: ['f8b23a4d-89ad-4220-8c9f-d81756009f0c'], acceptAllDevices: true })
         .then(d => {
             device = d;
@@ -156,26 +219,21 @@ function doIt() {
                     console.log('characteristics:', chs)
                     for (let ix = 0; ix < chs.length; ix++) {
                         const ch = chs[ix];
+                        // Fast characteristic
                         if (ch.uuid == 'f8b23a4d-89ad-4220-8c9f-d81756009f0c') {
-                            // Magnetometer
-                            magCharacteristic = ch
-                            ch.addEventListener('characteristicvaluechanged', gotMagData)
+                            fastCharacteristic = ch
+                            ch.addEventListener('characteristicvaluechanged', gotFastData)
                             ch.startNotifications()
-                            setMagSampleRate(magSampleRateSelect.value)
+                            imuSampleRate = imuSampleRateSelect.value;
+                            magSampleRate = magSampleRateSelect.value;
+                            metSampleRate = metSampleRateSelect.value;
+                            setSampleRates(imuSampleRate, magSampleRate, metSampleRate);
                         }
+                        // Slow characteristic
                         if (ch.uuid == 'f8b23a4d-89ad-4220-8c9f-d81756009f0d') {
-                            // Accelerometer
-                            accelCharacteristic = ch
-                            ch.addEventListener('characteristicvaluechanged', gotAccelData)
+                            slowCharacteristic = ch
+                            ch.addEventListener('characteristicvaluechanged', gotSlowData)
                             ch.startNotifications()
-                            setAccelSampleRate(accelSampleRateSelect.value)
-                        }
-                        if (ch.uuid == 'f8b23a4d-89ad-4220-8c9f-d81756009f0e') {
-                            // battery
-                            battCharacteristic = ch
-                            ch.addEventListener('characteristicvaluechanged', gotBattData)
-                            ch.startNotifications()
-                            setBattSampleRate(battSampleRateSelect.value)
                         }
                     }
                 })
@@ -205,7 +263,7 @@ function clearIt() {
         name: 'z'
     }], { title: 'Magnetometer' });
 
-    Plotly.newPlot(accelDiv, [{
+    Plotly.newPlot(accDiv, [{
         y: [],
         type: 'scattergl',
         mode: 'lines',
@@ -225,7 +283,7 @@ function clearIt() {
         name: 'z'
     }], { title: 'Accelerometer' });
 
-    Plotly.newPlot(gyroDiv, [{
+    Plotly.newPlot(gyrDiv, [{
         y: [],
         type: 'scattergl',
         mode: 'lines',
@@ -245,7 +303,14 @@ function clearIt() {
         name: 'z'
     }], { title: 'Gyroscope' });
 
-    Plotly.newPlot(battDiv, [{
+    Plotly.newPlot(adcDiv, [{
+        y: [],
+        type: 'scattergl',
+        mode: 'lines',
+        line: { color: '#000' },
+    }], { title: 'ADC reading' });
+
+    Plotly.newPlot(batDiv, [{
         y: [],
         type: 'scattergl',
         mode: 'lines',
@@ -254,14 +319,23 @@ function clearIt() {
 }
 
 // the actual initialization
-magSampleRateSelect.onchange = evt => {setMagSampleRate(evt.target.value) }
-accelSampleRateSelect.onchange = evt => {setAccelSampleRate(evt.target.value) }
-battSampleRateSelect.onchange = evt => {setBattSampleRate(evt.target.value) }
+magSampleRateSelect.onchange = evt => {
+    magSampleRate = evt.target.value;
+    setSampleRates(imuSampleRate, magSampleRate, metSampleRate);
+}
+imuSampleRateSelect.onchange = evt => {
+    imuSampleRate = evt.target.value;
+    setSampleRates(imuSampleRate, magSampleRate, metSampleRate);
+}
+metSampleRateSelect.onchange = evt => {
+    metSampleRate = evt.target.value;
+    setSampleRates(imuSampleRate, magSampleRate, metSampleRate);
+}
 setInterval(() => {
-    magSampleRateSpan.innerText = magSampleCnt; magSampleCnt = 0
-    accelSampleRateSpan.innerText = accelSampleCnt; accelSampleCnt = 0
-    battSampleRateSpan.innerText = battSampleCnt; battSampleCnt = 0
-    frameRateSpan.innerText = frameCnt; frameCnt = 0
+    magSampleRateSpan.innerText = magSampleCnt; magSampleCnt = 0;
+    imuSampleRateSpan.innerText = imuSampleCnt; imuSampleCnt = 0;
+    metSampleRateSpan.innerText = metSampleCnt; metSampleCnt = 0;
+    frameRateSpan.innerText = frameCnt; frameCnt = 0;
 }, 1000)
 window.requestAnimationFrame(step)
 
