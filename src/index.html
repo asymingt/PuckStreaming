@@ -21,32 +21,26 @@
         <option value="20">20 Hz</option>
         <option value="10">10 Hz</option>
         <option value="5" selected>5 Hz</option>
+        <option value="2.5" >2.5 Hz</option>
+        <option value="1.25">1.25 Hz</option>
+        <option value="0.625" >0.625 Hz</option>
         <option value="0">0 (OFF)</option>
     </select>
 
     IMU sample rate:
     <select id="imuSampleRateSelect">
-        <option value="26" selected>26 Hz</option>
-        <option value="52">52 Hz</option>
-        <option value="104">104 Hz</option>
+        <option value="416">416 Hz</option>
         <option value="208">208 Hz</option>
-        <option value="0">0 (OFF)</option>
-    </select>
-
-    Metdata sample rate:
-    <select id="metSampleRateSelect">
-        <option value="1" selected>1 Hz</option>
-        <option value="2">2 Hz</option>
-        <option value="4">4 Hz</option>
-        <option value="8">8 Hz</option>
+        <option value="104" selected>104 Hz</option>
+        <option value="52">52 Hz</option>
+        <option value="26">26 Hz</option>
+        <option value="12.5">12.5 Hz</option>
         <option value="0">0 (OFF)</option>
     </select>
 
     <br />
     Magnetometer sample rate: <span id="magSampleRateSpan">?</span>
     Inertial sample rate: <span id="imuSampleRateSpan">?</span>
-    Metadata sample rate: <span id="metSampleRateSpan">?</span>
-    Battery level: <span id="batLevelSpan">?</span>
     Sensor id: <span id="idSpan">?</span>
     Browser frame rate: <span id="frameRateSpan">?</span>
 
@@ -57,6 +51,7 @@
     <div id="gyrDiv" style="height: 300px; width: 100%;"></div>
     <div id="adcDiv" style="height: 300px; width: 100%;"></div>
     <div id="batDiv" style="height: 300px; width: 100%;"></div>
+    <div id="temDiv" style="height: 300px; width: 100%;"></div>
 
     <script src="receive.js"></script>
 </body>

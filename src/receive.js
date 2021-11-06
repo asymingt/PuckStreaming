@@ -3,8 +3,6 @@ const magSampleRateSelect = document.getElementById('magSampleRateSelect')
 const magSampleRateSpan = document.getElementById('magSampleRateSpan')
 const imuSampleRateSelect = document.getElementById('imuSampleRateSelect')
 const imuSampleRateSpan = document.getElementById('imuSampleRateSpan')
-const metSampleRateSelect = document.getElementById('metSampleRateSelect')
-const metSampleRateSpan = document.getElementById('metSampleRateSpan')
 
 // Graph divs
 const magDiv = document.getElementById('magDiv')
@@ -12,24 +10,24 @@ const accDiv = document.getElementById('accDiv')
 const gyrDiv = document.getElementById('gyrDiv')
 const batDiv = document.getElementById('batDiv')
 const adcDiv = document.getElementById('adcDiv')
+const temDiv = document.getElementById('temDiv')
 
 // Extra info
 const idSpan = document.getElementById('idSpan')
-const batLevelSpan = document.getElementById('batLevelSpan')
 const frameRateSpan = document.getElementById('frameRateSpan')
 
 /// BLE things, mainly for debug
 var device, server, service, fastCharacteristic, slowCharacteristic;
 
 /// to display the actual sample rate
-var magSampleRate, imuSampleRate, metSampleRate;
-var imuSampleCnt = 0, magSampleCnt = 0, metSampleCnt = 0, frameCnt = 0
+var magSampleRate, imuSampleRate;
+var imuSampleCnt = 0, magSampleCnt = 0, frameCnt = 0
 
 /// x, y, z coordinates sent to Plotly for mag, accel, gyro
 var mxq = [], myq = [], mzq = [];
 var axq = [], ayq = [], azq = [];
 var gxq = [], gyq = [], gzq = [];
-var bq = [], aq = [];
+var bq = [], aq = [], tq = [];
 
 // Get the ID -> color mapping
 function getStringId(newId) {
@@ -63,54 +61,59 @@ function getStringId(newId) {
     return id;
 }
 
-function showBatLevel(battLevel) {
-    batLevelSpan.innerText = battLevel + "%"
-}
-
 function showId(id) {
     idSpan.innerText = id
 }
 
+function rawToHundred(raw) {
+    return raw / 0x7FFF * 100;
+}
+
 // Unpack fast rate data
 function gotFastData(evt) {
+    imuSampleCnt++;
     // Unpack data
     var raw = evt.target.value;
-    var fastData = new Int16Array(raw.buffer);
+    var data = new Int16Array(raw.buffer);
     // decode metadata
-    var meta = fastData[0];
-    var mag = ((meta >> 15) & 0x1);
-    var id = ((meta >> 12) & 0x7);
+    var meta = data[0];
+    var id = ((meta >> 12) & 0xF);
     var adc = (meta & 0xFFF);
     // save id
     showId(getStringId(id));
     // save ADC
     aq.push(adc);
     // Save IMU
-    imuSampleCnt++;
-    axq.push(fastData[1]);
-    ayq.push(fastData[2]);
-    azq.push(fastData[3]);
-    gxq.push(fastData[4]);
-    gyq.push(fastData[5]);
-    gzq.push(fastData[6]);
-    // Save mag
-    if (mag == 1) {
-        magSampleCnt++;
-        mxq.push(fastData[7]);
-        myq.push(fastData[8]);
-        mzq.push(fastData[9]);
-    }
+    axq.push(data[1]);
+    ayq.push(data[2]);
+    azq.push(data[3]);
+    gxq.push(data[4]);
+    gyq.push(data[5]);
+    gzq.push(data[6]);
 }
 
 // Unpack slow rate data
 function gotSlowData(evt) {
-    var raw = evt.target.value
-    var slowData = new Int16Array(raw.buffer)
-    metSampleCnt++;
-    // Save battery
-    var batLevl = slowData[1];
-    bq.push(batLevl);
-    showBatLevel(batLevl);
+    magSampleCnt++;
+    // Unpack data
+    var raw = evt.target.value;
+    var data = new Int16Array(raw.buffer);
+    // decode metadata
+    var meta = data[0];
+    var id = ((meta >> 12) & 0xF);
+    var adc = (meta & 0xFFF);
+    // save id
+    showId(getStringId(id));
+    // save ADC
+    aq.push(adc);
+    // Save MAG
+    mxq.push(data[1]);
+    myq.push(data[2]);
+    mzq.push(data[3]);
+    // Battery
+    bq.push(rawToHundred(data[4]));
+    // Temperature level (board)
+    tq.push(rawToHundred(data[5]));
 }
 
 /// the function executing at requestAnimationFrame.
@@ -173,17 +176,33 @@ function step() {
         );
         bq.length = 0;
     }
+    if (tq.length) {
+        Plotly.extendTraces(
+            temDiv,
+            {
+                y: [tq],
+            },
+            [0, ]
+        );
+        tq.length = 0;
+    }
     window.requestAnimationFrame(step);
 }
 
-function setSampleRates(imuSampleRateIn, magSampleRateIn, metSampleRateIn) {
-    // Don't update with unefined values.
-    if ((typeof imuSampleRateIn === 'undefined') ||
-        (typeof magSampleRateIn === 'undefined') ||
-        (typeof metSampleRateIn === 'undefined')) return;
-    // If we get here, then all rates are valid.
+function setSampleRateImu(imuSampleRateIn) {
+    if (typeof imuSampleRateIn === 'undefined') {
+        return;
+    }
     fastCharacteristic && fastCharacteristic.writeValue && fastCharacteristic.writeValue(
-        new Uint8Array([imuSampleRateIn, magSampleRateIn, metSampleRateIn]))
+        new Float32Array([imuSampleRateIn]))
+}
+
+function setSampleRateMag(magSampleRateIn) {
+    if (typeof magSampleRateIn === 'undefined') {
+        return;
+    }
+    slowCharacteristic && slowCharacteristic.writeValue && slowCharacteristic.writeValue(
+        new Float32Array([magSampleRateIn]))
 }
 
 function disconnect() {
@@ -225,15 +244,15 @@ function doIt() {
                             ch.addEventListener('characteristicvaluechanged', gotFastData)
                             ch.startNotifications()
                             imuSampleRate = imuSampleRateSelect.value;
-                            magSampleRate = magSampleRateSelect.value;
-                            metSampleRate = metSampleRateSelect.value;
-                            setSampleRates(imuSampleRate, magSampleRate, metSampleRate);
+                            setSampleRateImu(imuSampleRate);
                         }
                         // Slow characteristic
                         if (ch.uuid == 'f8b23a4d-89ad-4220-8c9f-d81756009f0d') {
                             slowCharacteristic = ch
                             ch.addEventListener('characteristicvaluechanged', gotSlowData)
                             ch.startNotifications()
+                            magSampleRate = magSampleRateSelect.value;
+                            setSampleRateMag(magSampleRate);
                         }
                     }
                 })
@@ -315,26 +334,29 @@ function clearIt() {
         type: 'scattergl',
         mode: 'lines',
         line: { color: '#000' },
-    }], { title: 'Battery level' });
+    }], { title: 'Battery percentage' });
+
+    Plotly.newPlot(temDiv, [{
+        y: [],
+        type: 'scattergl',
+        mode: 'lines',
+        line: { color: '#000' },
+    }], { title: 'Temperature (celcius)' });
+
 }
 
 // the actual initialization
 magSampleRateSelect.onchange = evt => {
     magSampleRate = evt.target.value;
-    setSampleRates(imuSampleRate, magSampleRate, metSampleRate);
+    setSampleRateMag(magSampleRate);
 }
 imuSampleRateSelect.onchange = evt => {
     imuSampleRate = evt.target.value;
-    setSampleRates(imuSampleRate, magSampleRate, metSampleRate);
-}
-metSampleRateSelect.onchange = evt => {
-    metSampleRate = evt.target.value;
-    setSampleRates(imuSampleRate, magSampleRate, metSampleRate);
+    setSampleRateImu(imuSampleRate);
 }
 setInterval(() => {
     magSampleRateSpan.innerText = magSampleCnt; magSampleCnt = 0;
     imuSampleRateSpan.innerText = imuSampleCnt; imuSampleCnt = 0;
-    metSampleRateSpan.innerText = metSampleCnt; metSampleCnt = 0;
     frameRateSpan.innerText = frameCnt; frameCnt = 0;
 }, 1000)
 window.requestAnimationFrame(step)
